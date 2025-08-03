@@ -44,6 +44,17 @@ jobs:
           # Set environment variable for sprint folder
           echo "SPRINT=sprint5-with-bugs" > .env
           
+          # Ensure Laravel has correct database configuration
+          cp API/.env.example API/.env
+          echo "DB_CONNECTION=mysql" >> API/.env
+          echo "DB_HOST=mariadb" >> API/.env
+          echo "DB_PORT=3306" >> API/.env
+          echo "DB_DATABASE=toolshop" >> API/.env
+          echo "DB_USERNAME=user" >> API/.env
+          echo "DB_PASSWORD=root" >> API/.env
+          echo "APP_KEY=base64:hJawExRAnwWOUI0a/YBWH+yRHJWCKYpwItOUFQdcFo4=" >> API/.env
+          echo "JWT_SECRET=XVVuj9s7byIX8XPNWt0aYOsFjmc4JZQmE2wR7h9IJXoEOWXwk6o6wM8AKUL7jUTy" >> API/.env
+          
           # Use docker compose (V2 syntax) instead of docker-compose
           docker compose up -d --build
           
