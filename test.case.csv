@@ -1,0 +1,114 @@
+,,,,,,,,,,Test Execution,,,,,
+No.,Test Case ID,Test Type,Requirement Name,Test case name/Objective,Precondition,Test steps,Test Data,Expected Result,Created By,Actual Result,Status,Bug ID,Tester,Tested Date,Remark
+1,PROD-UPD-TC001,Functional,Product Management,Verify successful product update with all valid fields,"1. Admin user is authenticated.
+2. Product with id={{productId}} exists.","1. Send PUT request to /products/{{productId}}.
+2. Verify the response.","{
+""name"": ""Updated Power Drill"", 
+""price"": 129.99, 
+""stock"": 95, 
+""category_id"": 1
+}","Status: 200 OK
+Response body contains the updated product details.",22127477,,,,,,
+2,PROD-UPD-TC002,Negative,Product Management,Verify error when updating with a negative price,"1. Admin user is authenticated.
+2. Product with id={{productId}} exists.","1. Send PUT request to /products/{{productId}}.
+2. Verify the response.","{""price"": -10.00}","Status: 400 Bad Request or 422 Unprocessable Entity
+Response contains a price validation error message.",22127477,,,,,,
+3,PROD-UPD-TC003,Negative,Product Management,Verify error when updating with an invalid stock value (string),"1. Admin user is authenticated.
+2. Product with id={{productId}} exists.","1. Send PUT request to /products/{{productId}}.
+2. Verify the response.","{""stock"": ""fifty""}","Status: 400 Bad Request or 422 Unprocessable Entity
+Response contains a stock validation error message.",22127477,,,,,,
+4,PROD-UPD-TC004,Negative,Product Management,Verify error when updating a product that does not exist,1. Admin user is authenticated.,"1. Send PUT request to /products/99999.
+2. Verify the response.","{""name"": ""Ghost Product""}",Status: 404 Not Found,22127477,,,,,,
+5,PROD-UPD-TC005,Security,Product Management,Verify unauthorized error when updating with a regular user token,"1. Regular user is authenticated.
+2. Product with id={{productId}} exists.","1. Send PUT request to /products/{{productId}}.
+2. Verify the response.","{""price"": 150.00}",Status: 401 Unauthorized or 403 Forbidden,22127477,,,,,,
+6,PROD-UPD-TC006,Security,Product Management,Verify unauthorized error when updating without an auth token,1. No user is authenticated.,"1. Send PUT request to /products/{{productId}}.
+2. Verify the response.","{""price"": 150.00}",Status: 401 Unauthorized,22127477,,,,,,
+7,USER-DEL-TC001,Functional,User Management,Verify successful user deletion by an admin,"1. Admin user is authenticated.
+2. A target user with id={{userId}} exists.","1. Send DELETE request to /users/{{userId}}.
+2. Verify the response.",(None),Status: 200 OK or 204 No Content,22127477,,,,,,
+8,USER-DEL-TC002,Negative,User Management,Verify error when deleting a user that does not exist,1. Admin user is authenticated.,"1. Send DELETE request to /users/99999.
+2. Verify the response.",(None),Status: 404 Not Found,22127477,,,,,,
+9,USER-DEL-TC003,Security,User Management,Verify a user cannot delete their own account,1. A regular user with id={{userId}} is authenticated.,"1. Send DELETE request to /users/{{userId}}.
+2. Verify the response.",(None),Status: 403 Forbidden,22127477,,,,,,
+10,USER-DEL-TC004,Security,User Management,Verify a regular user cannot delete another user's account,"1. A regular user is authenticated.
+2. Another user with id={{otherUserId}} exists.","1. Send DELETE request to /users/{{otherUserId}}.
+2. Verify the response.",(None),Status: 403 Forbidden,22127477,,,,,,
+11,USER-DEL-TC005,Security,User Management,Verify unauthorized error when deleting without an auth token,"1. No user is authenticated.
+2. User with id={{userId}} exists.","1. Send DELETE request to /users/{{userId}}.
+2. Verify the response.",(None),Status: 401 Unauthorized,22127477,,,,,,
+12,BRAND-CREATE-TC001,Functional,Brand Management,Verify successful brand creation with valid data,1. Admin user is authenticated.,"1. Send POST request to /brands.
+2. Verify the response.","{
+""name"": ""ProTools"", 
+""slug"": ""protools-new"",
+""logo_url"": ""http://example.com/logo.png""
+}","Status: 201 Created
+Response body contains the new brand details including an ID.",22127477,,,,,,
+13,BRAND-CREATE-TC002,Negative,Brand Management,Verify error when creating a brand with a missing name,1. Admin user is authenticated.,"1. Send POST request to /brands.
+2. Verify the response.","{
+""slug"": ""missing-name-test"",
+""logo_url"": ""http://example.com/logo.png""}","Status: 400 Bad Request or 422 Unprocessable Entity
+Response contains a name validation error.",22127477,,,,,,
+14,BRAND-CREATE-TC003,Negative,Brand Management,Verify error when creating a brand with a duplicate slug,"1. Admin user is authenticated.
+2. A brand with slug ""protools"" already exists.","1. Send POST request to /brands.
+2. Verify the response.","{
+""name"": ""DeWalt"",
+""slug"": ""protools""
+}","Status: 422 Unprocessable Entity
+Response contains a slug validation error.",22127477,,,,,,
+15,BRAND-CREATE-TC004,Security,Brand Management,Verify unauthorized error when creating a brand with a regular user token,1. Regular user is authenticated.,"1. Send POST request to /brands.
+2. Verify the response.","{
+""name"": ""UserBrand"",
+""slug"": ""userbrand""
+}",Status: 401 Unauthorized or 403 Forbidden,22127477,,,,,,
+16,BRAND-UPD-TC001,Functional,Brand Management,Verify successful brand update with valid data,"1. Admin user is authenticated.
+2. Brand with id={{brandId}} exists.","1. Send PUT request to /brands/{{brandId}}.
+2. Verify the response.","{
+""name"": ""ProTools Inc."",
+""slug"": ""protools-inc""
+}","Status: 200 OK
+Response body contains the updated brand details.",22127477,,,,,,
+17,BRAND-UPD-TC002,Negative,Brand Management,Verify error when updating a brand to a duplicate slug,"1. Admin user is authenticated.
+2. Brands with id={{brandId}} and existing slug ""brand-name-1"" exist.","1. Send PUT request to /brands/{{brandId}}.
+2. Verify the response.","{
+""name"": ""Makita"",
+""slug"": ""brand-name-1""
+}","Status: 422 Unprocessable Entity
+Response contains a slug validation error.",22127477,,,,,,
+18,BRAND-UPD-TC003,Negative,Brand Management,Verify error when updating a brand that does not exist,1. Admin user is authenticated.,"1. Send PUT request to /brands/99999.
+2. Verify the response.","{
+""name"": ""Ghost Brand"",
+""slug"": ""ghost-brand""
+}",Status: 404 Not Found,22127477,,,,,,
+19,BRAND-UPD-TC004,Security,Brand Management,Verify unauthorized error when updating with a regular user token,"1. Regular user is authenticated.
+2. Brand with id={{brandId}} exists.","1. Send PUT request to /brands/{{brandId}}.
+2. Verify the response.","{
+""name"": ""UserBrand"",
+""slug"": ""userbrand-update""
+}",Status: 401 Unauthorized or 403 Forbidden,22127477,,,,,,
+20,BRAND-DEL-TC001,Functional,Brand Management,Verify successful brand deletion by an admin,"1. Admin user is authenticated.
+2. A brand with id={{brandId}} exists.","1. Send DELETE request to /brands/{{brandId}}.
+2. Verify the response.",(None),Status: 200 OK or 204 No Content,22127477,,,,,,
+21,BRAND-DEL-TC002,Negative,Brand Management,Verify error when deleting a brand that does not exist,1. Admin user is authenticated.,"1. Send DELETE request to /brands/99999.
+2. Verify the response.",(None),Status: 404 Not Found,22127477,,,,,,
+22,BRAND-DEL-TC003,Security,Brand Management,Verify unauthorized error when deleting with a regular user token,"1. Regular user is authenticated.
+2. Brand with id={{brandId}} exists.","1. Send DELETE request to /brands/{{brandId}}.
+2. Verify the response.",(None),Status: 401 Unauthorized or 403 Forbidden,22127477,,,,,,
+23,BRAND-CREATE-TC005,Functional,Brand Management,Verify that duplicate brand names are allowed (only slug must be unique),"1. Admin user is authenticated.
+2. A brand named ""ProTools"" already exists.","1. Send POST request to /brands.
+2. Verify the response.","{
+""name"": ""ProTools"",
+""slug"": ""protools-different""
+}","Status: 201 Created
+Response body contains the new brand details with duplicate name but unique slug.",22127477,,,,,,
+24,FAV-ADD-TC001,Functional,Favorites Management,Verify a user can add an existing product to their favorites,"1. Regular user is authenticated.
+2. Product with id={{productId}} exists.","1. Send POST request to /favorites.
+2. Verify the response.","{""product_id"": {{productId}}}","Status: 201 Created
+Response indicates success.",22127477,,,,,,
+25,FAV-ADD-TC002,Negative,Favorites Management,Verify error when adding a product that does not exist,1. Regular user is authenticated.,"1. Send POST request to /favorites.
+2. Verify the response.","{""product_id"": 99999}",Status: 404 Not Found,22127477,,,,,,
+26,FAV-ADD-TC003,Negative,Favorites Management,Verify error when adding a product to favorites that is already there,"1. Regular user is authenticated.
+2. Product id={{productId}} is already in the user's favorites.","1. Send POST request to /favorites.
+2. Verify the response.","{""product_id"": {{productId}}}",Status: 409 Conflict,22127477,,,,,,
+27,FAV-ADD-TC004,Security,Favorites Management,Verify unauthorized error when adding to favorites without an auth token,1. No user is authenticated.,"1. Send POST request to /favorites.
+2. Verify the response.","{""product_id"": {{productId}}}",Status: 401 Unauthorized,22127477,,,,,,

@@ -1,0 +1,138 @@
+name: Collection Validation
+
+on:
+  push:
+    paths:
+      - 'sprint5-with-bugs/Toolshop_APITesting.postman_collection.json'
+      - 'sprint5-with-bugs/test.case.csv'
+  pull_request:
+    paths:
+      - 'sprint5-with-bugs/Toolshop_APITesting.postman_collection.json'
+      - 'sprint5-with-bugs/test.case.csv'
+
+env:
+  SPRINT_DIR: sprint5-with-bugs
+
+jobs:
+  validate-collection:
+    name: Validate Postman Collection
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Validation Tools
+        run: |
+          npm install -g newman
+          npm install -g ajv-cli
+
+      - name: Validate Collection JSON Structure
+        working-directory: ${{ env.SPRINT_DIR }}
+        run: |
+          echo "🔍 Validating Postman collection structure..."
+          
+          # Check if it's valid JSON
+          if ! jq empty Toolshop_APITesting.postman_collection.json; then
+            echo "❌ Invalid JSON format"
+            exit 1
+          fi
+          
+          echo "✅ Valid JSON format"
+
+      - name: Validate Collection Schema
+        working-directory: ${{ env.SPRINT_DIR }}
+        run: |
+          echo "🔍 Checking collection schema..."
+          
+          # Check required fields
+          INFO_NAME=$(jq -r '.info.name' Toolshop_APITesting.postman_collection.json)
+          if [ "$INFO_NAME" = "null" ]; then
+            echo "❌ Missing collection name"
+            exit 1
+          fi
+          
+          echo "✅ Collection name: $INFO_NAME"
+
+      - name: Count Test Cases
+        working-directory: ${{ env.SPRINT_DIR }}
+        run: |
+          echo "📊 Analyzing test collection..."
+          
+          # Count total requests
+          TOTAL_REQUESTS=$(jq '[.. | objects | select(has("request")) | .request] | length' Toolshop_APITesting.postman_collection.json)
+          
+          # Count folders
+          TOTAL_FOLDERS=$(jq '[.item[] | select(.item)] | length' Toolshop_APITesting.postman_collection.json)
+          
+          # List folders
+          echo "📁 Test Folders:"
+          jq -r '.item[] | select(.item) | "- " + .name' Toolshop_APITesting.postman_collection.json
+          
+          echo ""
+          echo "📊 Collection Statistics:"
+          echo "- Total Folders: $TOTAL_FOLDERS"
+          echo "- Total Test Cases: $TOTAL_REQUESTS"
+
+      - name: Validate CSV Test Cases
+        working-directory: ${{ env.SPRINT_DIR }}
+        run: |
+          echo "🔍 Validating test cases CSV..."
+          
+          # Check if CSV exists
+          if [ ! -f "test.case.csv" ]; then
+            echo "❌ test.case.csv not found"
+            exit 1
+          fi
+          
+          # Count CSV test cases
+          CSV_LINES=$(tail -n +3 test.case.csv | grep -c '^[0-9]' || echo "0")
+          
+          echo "📊 CSV Statistics:"
+          echo "- Total Test Cases in CSV: $CSV_LINES"
+          
+          # List test case types
+          echo ""
+          echo "🧪 Test Case Types:"
+          tail -n +3 test.case.csv | cut -d',' -f3 | sort | uniq -c | sort -nr
+
+      - name: Cross-validate Collection and CSV
+        working-directory: ${{ env.SPRINT_DIR }}
+        run: |
+          echo "🔍 Cross-validating collection and CSV..."
+          
+          # Extract test case IDs from collection
+          echo "📋 Test Cases in Collection:"
+          jq -r '[.. | objects | select(has("name")) | .name] | map(select(contains("TC"))) | .[]' Toolshop_APITesting.postman_collection.json | sort
+          
+          echo ""
+          echo "📋 Test Cases in CSV:"
+          tail -n +3 test.case.csv | cut -d',' -f2 | grep -v '^$' | sort
+
+      - name: Generate Validation Report
+        working-directory: ${{ env.SPRINT_DIR }}
+        run: |
+          echo "## 📝 Collection Validation Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Collection info
+          COLLECTION_NAME=$(jq -r '.info.name' Toolshop_APITesting.postman_collection.json)
+          TOTAL_REQUESTS=$(jq '[.. | objects | select(has("request")) | .request] | length' Toolshop_APITesting.postman_collection.json)
+          TOTAL_FOLDERS=$(jq '[.item[] | select(.item)] | length' Toolshop_APITesting.postman_collection.json)
+          CSV_LINES=$(tail -n +3 test.case.csv | grep -c '^[0-9]' || echo "0")
+          
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Collection Name | $COLLECTION_NAME |" >> $GITHUB_STEP_SUMMARY
+          echo "| Total Folders | $TOTAL_FOLDERS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Total Requests | $TOTAL_REQUESTS |" >> $GITHUB_STEP_SUMMARY
+          echo "| CSV Test Cases | $CSV_LINES |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### 📁 Test Folders" >> $GITHUB_STEP_SUMMARY
+          jq -r '.item[] | select(.item) | "- " + .name' Toolshop_APITesting.postman_collection.json >> $GITHUB_STEP_SUMMARY

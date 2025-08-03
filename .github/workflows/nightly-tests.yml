@@ -1,0 +1,147 @@
+name: Nightly API Testing - Sprint5
+
+on:
+  schedule:
+    # Run every night at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+env:
+  SPRINT_DIR: sprint5-with-bugs
+  BASE_URL: http://localhost:8091
+
+jobs:
+  nightly-tests:
+    name: Nightly API Test Suite
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Testing Tools
+        run: |
+          npm install -g newman newman-reporter-html newman-reporter-htmlextra
+          npm install -g @postman/newman-reporter-junitfull
+
+      - name: Set up Docker Environment
+        working-directory: .
+        run: |
+          echo "SPRINT=sprint5-with-bugs" > .env
+          docker-compose up -d --build
+          sleep 90
+
+      - name: Wait for Application Ready
+        run: |
+          max_attempts=30
+          attempt=0
+          
+          while [ $attempt -lt $max_attempts ]; do
+            if curl -f http://localhost:8091/brands > /dev/null 2>&1; then
+              echo "✅ Application is ready!"
+              break
+            fi
+            echo "⏳ Waiting... (attempt $((attempt + 1))/$max_attempts)"
+            sleep 10
+            attempt=$((attempt + 1))
+          done
+
+      - name: Get Authentication Tokens
+        id: auth
+        run: |
+          # Try multiple times to get tokens
+          for i in {1..5}; do
+            ADMIN_RESPONSE=$(curl -s -X POST http://localhost:8091/users/login \
+              -H "Content-Type: application/json" \
+              -d '{"email":"admin@practicesoftwaretesting.com","password":"welcome01"}')
+            
+            ADMIN_TOKEN=$(echo $ADMIN_RESPONSE | jq -r '.access_token // empty')
+            
+            if [ ! -z "$ADMIN_TOKEN" ] && [ "$ADMIN_TOKEN" != "null" ]; then
+              break
+            fi
+            
+            echo "Retry $i: Waiting for login service..."
+            sleep 10
+          done
+          
+          USER_RESPONSE=$(curl -s -X POST http://localhost:8091/users/login \
+            -H "Content-Type: application/json" \
+            -d '{"email":"customer@practicesoftwaretesting.com","password":"welcome01"}')
+          
+          USER_TOKEN=$(echo $USER_RESPONSE | jq -r '.access_token // empty')
+          
+          echo "admin_token=$ADMIN_TOKEN" >> $GITHUB_OUTPUT
+          echo "user_token=$USER_TOKEN" >> $GITHUB_OUTPUT
+
+      - name: Run Complete Nightly Test Suite
+        working-directory: ${{ env.SPRINT_DIR }}
+        continue-on-error: true
+        run: |
+          mkdir -p reports
+          
+          newman run Toolshop_APITesting.postman_collection.json \
+            --env-var "baseUrl=${{ env.BASE_URL }}" \
+            --env-var "admin_token=${{ steps.auth.outputs.admin_token }}" \
+            --env-var "user_token=${{ steps.auth.outputs.user_token }}" \
+            --env-var "productId=1" \
+            --env-var "userId=2" \
+            --env-var "brandId=1" \
+            --env-var "otherUserId=3" \
+            --reporters cli,html,htmlextra,junitfull \
+            --reporter-html-export "reports/nightly-report.html" \
+            --reporter-htmlextra-export "reports/detailed-nightly-report.html" \
+            --reporter-junitfull-export "reports/nightly-results.xml" \
+            --reporter-htmlextra-title "Nightly API Test Report - $(date +%Y-%m-%d)" \
+            --reporter-htmlextra-logs \
+            --reporter-htmlextra-showOnlyFails \
+            --bail
+
+      - name: Generate Test Summary
+        working-directory: ${{ env.SPRINT_DIR }}
+        run: |
+          echo "## 🌙 Nightly Test Results - $(date +%Y-%m-%d)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "reports/nightly-results.xml" ]; then
+            # Parse JUnit XML for results
+            tests=$(grep -o 'tests="[0-9]*"' reports/nightly-results.xml | grep -o '[0-9]*' || echo "0")
+            failures=$(grep -o 'failures="[0-9]*"' reports/nightly-results.xml | grep -o '[0-9]*' || echo "0")
+            errors=$(grep -o 'errors="[0-9]*"' reports/nightly-results.xml | grep -o '[0-9]*' || echo "0")
+            
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Total Tests | $tests |" >> $GITHUB_STEP_SUMMARY
+            echo "| Failures | $failures |" >> $GITHUB_STEP_SUMMARY
+            echo "| Errors | $errors |" >> $GITHUB_STEP_SUMMARY
+            echo "| Success Rate | $(( (tests - failures - errors) * 100 / tests ))% |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Test results not found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload Nightly Test Reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nightly-test-reports-${{ github.run_number }}
+          path: ${{ env.SPRINT_DIR }}/reports/
+          retention-days: 7
+
+      - name: Publish Test Results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Nightly API Tests
+          path: ${{ env.SPRINT_DIR }}/reports/nightly-results.xml
+          reporter: java-junit
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker-compose down -v
+          docker system prune -f

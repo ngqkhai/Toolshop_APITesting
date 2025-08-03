@@ -1,0 +1,185 @@
+name: Manual Testing Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'start'
+        type: choice
+        options:
+          - start
+          - stop
+          - restart
+          - test-specific
+      duration:
+        description: 'Keep environment running for (minutes)'
+        required: false
+        default: '60'
+      test_case:
+        description: 'Specific test case to run (optional)'
+        required: false
+        placeholder: 'e.g., BRAND-CREATE-TC001'
+
+env:
+  SPRINT_DIR: sprint5-with-bugs
+  BASE_URL: http://localhost:8091
+
+jobs:
+  manual-environment:
+    name: Manual Testing Environment Control
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+        if: github.event.inputs.action == 'start' || github.event.inputs.action == 'restart' || github.event.inputs.action == 'test-specific'
+
+      - name: Install Newman
+        run: npm install -g newman newman-reporter-htmlextra
+        if: github.event.inputs.action == 'test-specific'
+
+      - name: Start Environment
+        if: github.event.inputs.action == 'start' || github.event.inputs.action == 'restart'
+        working-directory: .
+        run: |
+          echo "🚀 Starting test environment..."
+          echo "SPRINT=sprint5-with-bugs" > .env
+          docker-compose up -d --build
+          
+          echo "⏳ Waiting for services to be ready..."
+          sleep 90
+          
+          # Health check
+          max_attempts=20
+          attempt=0
+          
+          while [ $attempt -lt $max_attempts ]; do
+            if curl -f http://localhost:8091/brands > /dev/null 2>&1; then
+              echo "✅ Environment is ready!"
+              echo "📍 Base URL: ${{ env.BASE_URL }}"
+              echo "📁 API Collection: ${{ env.SPRINT_DIR }}/Toolshop_APITesting.postman_collection.json"
+              break
+            fi
+            echo "⏳ Starting... (attempt $((attempt + 1))/$max_attempts)"
+            sleep 15
+            attempt=$((attempt + 1))
+          done
+
+      - name: Get Service URLs and Credentials
+        if: github.event.inputs.action == 'start' || github.event.inputs.action == 'restart'
+        run: |
+          echo "## 🌐 Environment Information" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | URL | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| API | http://localhost:8091 | ✅ Running |" >> $GITHUB_STEP_SUMMARY
+          echo "| UI | http://localhost:4200 | ✅ Running |" >> $GITHUB_STEP_SUMMARY
+          echo "| phpMyAdmin | http://localhost:8080 | ✅ Running |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔑 Test Credentials" >> $GITHUB_STEP_SUMMARY
+          echo "| Role | Email | Password |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Admin | admin@practicesoftwaretesting.com | welcome01 |" >> $GITHUB_STEP_SUMMARY
+          echo "| Customer | customer@practicesoftwaretesting.com | welcome01 |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Test Collection" >> $GITHUB_STEP_SUMMARY
+          echo "- Collection File: \`${{ env.SPRINT_DIR }}/Toolshop_APITesting.postman_collection.json\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Test Cases CSV: \`${{ env.SPRINT_DIR }}/test.case.csv\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Run Specific Test Case
+        if: github.event.inputs.action == 'test-specific' && github.event.inputs.test_case != ''
+        working-directory: ${{ env.SPRINT_DIR }}
+        run: |
+          echo "🚀 Starting environment for specific test..."
+          cd ..
+          echo "SPRINT=sprint5-with-bugs" > .env
+          docker-compose up -d
+          sleep 90
+          
+          cd ${{ env.SPRINT_DIR }}
+          
+          # Get authentication tokens
+          ADMIN_RESPONSE=$(curl -s -X POST http://localhost:8091/users/login \
+            -H "Content-Type: application/json" \
+            -d '{"email":"admin@practicesoftwaretesting.com","password":"welcome01"}')
+          
+          USER_RESPONSE=$(curl -s -X POST http://localhost:8091/users/login \
+            -H "Content-Type: application/json" \
+            -d '{"email":"customer@practicesoftwaretesting.com","password":"welcome01"}')
+          
+          ADMIN_TOKEN=$(echo $ADMIN_RESPONSE | jq -r '.access_token // empty')
+          USER_TOKEN=$(echo $USER_RESPONSE | jq -r '.access_token // empty')
+          
+          echo "🧪 Running test case: ${{ github.event.inputs.test_case }}"
+          
+          # Find the request name that contains the test case ID
+          REQUEST_NAME=$(grep -o '"name": "[^"]*${{ github.event.inputs.test_case }}[^"]*"' Toolshop_APITesting.postman_collection.json | head -1 | sed 's/"name": "\(.*\)"/\1/')
+          
+          if [ ! -z "$REQUEST_NAME" ]; then
+            echo "📝 Found test: $REQUEST_NAME"
+            
+            newman run Toolshop_APITesting.postman_collection.json \
+              --env-var "baseUrl=${{ env.BASE_URL }}" \
+              --env-var "admin_token=$ADMIN_TOKEN" \
+              --env-var "user_token=$USER_TOKEN" \
+              --env-var "productId=1" \
+              --env-var "userId=2" \
+              --env-var "brandId=1" \
+              --env-var "otherUserId=3" \
+              --reporters cli,htmlextra \
+              --reporter-htmlextra-export "reports/specific-test-${{ github.event.inputs.test_case }}.html" \
+              --reporter-htmlextra-title "Test Case: ${{ github.event.inputs.test_case }}" \
+              --verbose
+          else
+            echo "❌ Test case ${{ github.event.inputs.test_case }} not found in collection"
+            exit 1
+          fi
+
+      - name: Keep Environment Running
+        if: github.event.inputs.action == 'start' && github.event.inputs.duration != ''
+        run: |
+          DURATION=${{ github.event.inputs.duration }}
+          echo "⏰ Keeping environment running for $DURATION minutes..."
+          echo "💡 Use the stop action to shut down early if needed"
+          
+          # Convert minutes to seconds
+          SLEEP_TIME=$((DURATION * 60))
+          
+          # Show countdown every 5 minutes
+          while [ $SLEEP_TIME -gt 0 ]; do
+            REMAINING_MIN=$((SLEEP_TIME / 60))
+            echo "⏳ Environment will stop in $REMAINING_MIN minutes..."
+            
+            if [ $SLEEP_TIME -lt 300 ]; then
+              sleep $SLEEP_TIME
+              break
+            else
+              sleep 300  # Sleep for 5 minutes
+              SLEEP_TIME=$((SLEEP_TIME - 300))
+            fi
+          done
+          
+          echo "⏰ Time expired, shutting down environment..."
+
+      - name: Stop Environment
+        if: github.event.inputs.action == 'stop' || (github.event.inputs.action == 'start' && github.event.inputs.duration != '')
+        run: |
+          echo "🛑 Stopping test environment..."
+          docker-compose down -v
+          docker system prune -f
+          echo "✅ Environment stopped"
+
+      - name: Upload Test Reports
+        uses: actions/upload-artifact@v4
+        if: always() && github.event.inputs.action == 'test-specific'
+        with:
+          name: specific-test-report-${{ github.event.inputs.test_case }}
+          path: ${{ env.SPRINT_DIR }}/reports/
+          retention-days: 7

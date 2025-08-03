@@ -1,0 +1,272 @@
+name: API Testing Pipeline - Sprint5 with Bugs
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'sprint5-with-bugs/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'sprint5-with-bugs/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to test'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      test_suite:
+        description: 'Test suite to run'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - product-management
+          - user-management
+          - brand-management
+          - favorites-management
+
+env:
+  SPRINT_DIR: sprint5-with-bugs
+  DOCKER_COMPOSE_FILE: docker-compose.yml
+  BASE_URL: http://localhost:8091
+
+jobs:
+  setup-environment:
+    name: Setup Test Environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment-ready: ${{ steps.health-check.outputs.ready }}
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Environment
+        working-directory: .
+        run: |
+          # Set environment variable for sprint folder
+          echo "SPRINT=sprint5-with-bugs" > .env
+          
+          # Start the application stack
+          docker-compose up -d --build
+          
+          # Wait for services to be ready
+          echo "Waiting for services to start..."
+          sleep 60
+
+      - name: Health Check Services
+        id: health-check
+        run: |
+          # Check if web service is responding
+          max_attempts=30
+          attempt=0
+          
+          while [ $attempt -lt $max_attempts ]; do
+            if curl -f http://localhost:8091/brands > /dev/null 2>&1; then
+              echo "✅ Application is ready!"
+              echo "ready=true" >> $GITHUB_OUTPUT
+              break
+            fi
+            
+            echo "⏳ Waiting for application... (attempt $((attempt + 1))/$max_attempts)"
+            sleep 10
+            attempt=$((attempt + 1))
+          done
+          
+          if [ $attempt -eq $max_attempts ]; then
+            echo "❌ Application failed to start"
+            echo "ready=false" >> $GITHUB_OUTPUT
+            docker-compose logs
+            exit 1
+          fi
+
+      - name: Verify Database Connection
+        run: |
+          # Check if we can connect to the database
+          docker exec practice-software-testing-laravel-api-1 php artisan migrate:status || true
+
+  api-tests:
+    name: Run API Tests
+    runs-on: ubuntu-latest
+    needs: setup-environment
+    if: needs.setup-environment.outputs.environment-ready == 'true'
+    
+    strategy:
+      matrix:
+        test-suite:
+          - name: "Product Management"
+            folder: "Product Management"
+          - name: "User Management" 
+            folder: "User Management"
+          - name: "Brand Management"
+            folder: "Brand Management"
+          - name: "Favorites Management"
+            folder: "Favorites Management"
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Newman (Postman CLI)
+        run: |
+          npm install -g newman
+          npm install -g newman-reporter-html
+          npm install -g newman-reporter-htmlextra
+
+      - name: Set up Docker Environment
+        working-directory: .
+        run: |
+          echo "SPRINT=sprint5-with-bugs" > .env
+          docker-compose up -d
+          sleep 60
+
+      - name: Get Authentication Tokens
+        id: auth
+        run: |
+          # Get admin token
+          ADMIN_RESPONSE=$(curl -s -X POST http://localhost:8091/users/login \
+            -H "Content-Type: application/json" \
+            -d '{"email":"admin@practicesoftwaretesting.com","password":"welcome01"}')
+          
+          ADMIN_TOKEN=$(echo $ADMIN_RESPONSE | jq -r '.access_token // empty')
+          
+          # Get regular user token  
+          USER_RESPONSE=$(curl -s -X POST http://localhost:8091/users/login \
+            -H "Content-Type: application/json" \
+            -d '{"email":"customer@practicesoftwaretesting.com","password":"welcome01"}')
+          
+          USER_TOKEN=$(echo $USER_RESPONSE | jq -r '.access_token // empty')
+          
+          echo "admin_token=$ADMIN_TOKEN" >> $GITHUB_OUTPUT
+          echo "user_token=$USER_TOKEN" >> $GITHUB_OUTPUT
+          
+          if [ -z "$ADMIN_TOKEN" ] || [ "$ADMIN_TOKEN" = "null" ]; then
+            echo "❌ Failed to get admin token"
+            echo "Admin response: $ADMIN_RESPONSE"
+          else
+            echo "✅ Got admin token"
+          fi
+          
+          if [ -z "$USER_TOKEN" ] || [ "$USER_TOKEN" = "null" ]; then
+            echo "❌ Failed to get user token"  
+            echo "User response: $USER_RESPONSE"
+          else
+            echo "✅ Got user token"
+          fi
+
+      - name: Run ${{ matrix.test-suite.name }} Tests
+        working-directory: ${{ env.SPRINT_DIR }}
+        run: |
+          newman run Toolshop_APITesting.postman_collection.json \
+            --folder "${{ matrix.test-suite.folder }}" \
+            --env-var "baseUrl=${{ env.BASE_URL }}" \
+            --env-var "admin_token=${{ steps.auth.outputs.admin_token }}" \
+            --env-var "user_token=${{ steps.auth.outputs.user_token }}" \
+            --env-var "productId=1" \
+            --env-var "userId=2" \
+            --env-var "brandId=1" \
+            --env-var "otherUserId=3" \
+            --reporters cli,html,htmlextra \
+            --reporter-html-export "reports/report-${{ matrix.test-suite.name }}.html" \
+            --reporter-htmlextra-export "reports/detailed-report-${{ matrix.test-suite.name }}.html" \
+            --reporter-htmlextra-title "${{ matrix.test-suite.name }} API Test Report" \
+            --verbose
+
+      - name: Upload Test Reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: api-test-reports-${{ matrix.test-suite.name }}
+          path: ${{ env.SPRINT_DIR }}/reports/
+          retention-days: 30
+
+  full-regression-test:
+    name: Full Regression Test Suite
+    runs-on: ubuntu-latest
+    needs: setup-environment
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.test_suite == 'all'
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Newman
+        run: |
+          npm install -g newman newman-reporter-html newman-reporter-htmlextra
+
+      - name: Set up Docker Environment
+        working-directory: .
+        run: |
+          echo "SPRINT=sprint5-with-bugs" > .env
+          docker-compose up -d
+          sleep 60
+
+      - name: Get Authentication Tokens
+        id: auth
+        run: |
+          ADMIN_RESPONSE=$(curl -s -X POST http://localhost:8091/users/login \
+            -H "Content-Type: application/json" \
+            -d '{"email":"admin@practicesoftwaretesting.com","password":"welcome01"}')
+          
+          USER_RESPONSE=$(curl -s -X POST http://localhost:8091/users/login \
+            -H "Content-Type: application/json" \
+            -d '{"email":"customer@practicesoftwaretesting.com","password":"welcome01"}')
+          
+          echo "admin_token=$(echo $ADMIN_RESPONSE | jq -r '.access_token')" >> $GITHUB_OUTPUT
+          echo "user_token=$(echo $USER_RESPONSE | jq -r '.access_token')" >> $GITHUB_OUTPUT
+
+      - name: Run Complete Test Suite
+        working-directory: ${{ env.SPRINT_DIR }}
+        run: |
+          newman run Toolshop_APITesting.postman_collection.json \
+            --env-var "baseUrl=${{ env.BASE_URL }}" \
+            --env-var "admin_token=${{ steps.auth.outputs.admin_token }}" \
+            --env-var "user_token=${{ steps.auth.outputs.user_token }}" \
+            --env-var "productId=1" \
+            --env-var "userId=2" \
+            --env-var "brandId=1" \
+            --env-var "otherUserId=3" \
+            --reporters cli,html,htmlextra \
+            --reporter-html-export "reports/full-regression-report.html" \
+            --reporter-htmlextra-export "reports/detailed-full-regression-report.html" \
+            --reporter-htmlextra-title "Complete API Regression Test Report" \
+            --verbose
+
+      - name: Upload Full Test Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: full-regression-test-report
+          path: ${{ env.SPRINT_DIR }}/reports/
+          retention-days: 30
+
+  cleanup:
+    name: Cleanup Environment
+    runs-on: ubuntu-latest
+    needs: [api-tests, full-regression-test]
+    if: always()
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Stop Docker Services
+        run: |
+          docker-compose down -v
+          docker system prune -f
