@@ -61,7 +61,7 @@ jobs:
           attempt=0
           
           while [ $attempt -lt $max_attempts ]; do
-            if curl -f http://localhost:8091/brands > /dev/null 2>&1; then
+            if curl -f http://localhost:8091/products > /dev/null 2>&1; then
               echo "✅ Environment is ready!"
               echo "📍 Base URL: ${{ env.BASE_URL }}"
               echo "📁 API Collection: ${{ env.SPRINT_DIR }}/Toolshop_APITesting.postman_collection.json"

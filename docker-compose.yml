@@ -3,27 +3,29 @@ services:
   # The Application
   laravel-api:
     build:
-      context: ./_docker
+      context: ../_docker
       dockerfile: api.docker
       target: development
     working_dir: /var/www
     volumes:
-      - ./${SPRINT}/API:/var/www:cached
+      - ./API:/var/www:cached
     environment:
       - "PHP_OPCACHE_VALIDATE_TIMESTAMPS=1"
       - "DB_PORT=3306"
       - "DB_HOST=mariadb"
       - "host=localhost"
       - DISABLE_LOGGING=${DISABLE_LOGGING}
+    ports:
+      - "8081:80"
 
   angular-ui:
     build:
-      context: ./_docker
+      context: ../_docker
       dockerfile: ui.docker
       target: development
     working_dir: /app
     volumes:
-      - ./${SPRINT}/UI:/app:cached
+      - ./UI:/app:cached
     ports:
       - 4200:4200
     command: >
@@ -32,7 +34,7 @@ services:
   # The Web Server
   web:
     build:
-      context: ./_docker
+      context: ../_docker
       dockerfile: web.docker
     working_dir: /var/www
     volumes:

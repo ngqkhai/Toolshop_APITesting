@@ -308,10 +308,10 @@
       ]
     },
     {
-      "name": "Brand Management",
+      "name": "Favorites Management",
       "item": [
         {
-          "name": "BRAND-CREATE-TC001 - Verify successful brand creation with valid data",
+          "name": "FAV-ADD-TC001 - Verify a user can add an existing product to their favorites",
           "request": {
             "method": "POST",
             "header": [

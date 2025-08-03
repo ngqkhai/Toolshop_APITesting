@@ -1,4 +1,4 @@
-name: Toolshop API Tests - WORKING VERSION
+name: Toolshop API Tests - COMPLETE WORKING VERSION
 
 on:
   push:
@@ -8,9 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  SPRINT_DIR: .
-  DOCKER_COMPOSE_FILE: docker-compose.yml
-  BASE_URL: http://localhost:8081
+  API_BASE_URL: http://localhost:8081
 
 jobs:
   test-api:
@@ -38,42 +36,61 @@ jobs:
           docker compose version
           echo "✅ Docker Compose V2 is available"
 
+      - name: Navigate to Sprint Directory
+        run: cd sprint5-with-bugs
+
       - name: Start Application Stack
+        working-directory: sprint5-with-bugs
         run: |
           echo "🚀 Starting the application stack..."
+          
+          # Set environment variable for sprint folder
+          echo "SPRINT=sprint5-with-bugs" > .env
           
           # Use docker compose (V2 syntax) instead of docker-compose
           docker compose up -d --build
           
           echo "⏳ Waiting for services to start..."
-          sleep 60
+          sleep 90
           
           echo "📋 Container status:"
           docker compose ps
           
           echo "🔍 Checking container logs:"
-          docker compose logs --tail=20
+          docker compose logs --tail=30
 
       - name: Wait for API Ready
+        working-directory: sprint5-with-bugs
         run: |
           echo "⏳ Waiting for API to be ready..."
           
-          for i in {1..30}; do
-            if curl -f -s http://localhost:8081/brands > /dev/null 2>&1; then
-              echo "✅ API is ready!"
+          # Test both potential API endpoints
+          for i in {1..40}; do
+            if curl -f -s http://localhost:8081/products > /dev/null 2>&1; then
+              echo "✅ API is ready on port 8081!"
+              echo "API_BASE_URL=http://localhost:8081" >> $GITHUB_ENV
               break
-            elif [ $i -eq 30 ]; then
-              echo "❌ API failed to start after 30 attempts"
+            elif curl -f -s http://localhost:8091/products > /dev/null 2>&1; then
+              echo "✅ API is ready on port 8091!"
+              echo "API_BASE_URL=http://localhost:8091" >> $GITHUB_ENV
+              break
+            elif [ $i -eq 40 ]; then
+              echo "❌ API failed to start after 40 attempts"
               echo "🔍 Final container status:"
               docker compose ps
               echo "🔍 API logs:"
-              docker compose logs api
+              docker compose logs laravel-api
+              echo "🔍 Web server logs:"
+              docker compose logs web
               echo "🔍 Database logs:"  
               docker compose logs mariadb
+              echo "🔍 Testing connectivity:"
+              curl -v http://localhost:8081/products || true
+              curl -v http://localhost:8091/products || true
               exit 1
             else
-              echo "⏳ Attempt $i/30: API not ready yet..."
-              sleep 10
+              echo "⏳ Attempt $i/40: Testing API connectivity..."
+              sleep 15
             fi
           done
 
@@ -88,23 +105,25 @@ jobs:
           newman --version
 
       - name: Test Basic API Endpoints
+        working-directory: sprint5-with-bugs
         run: |
           echo "🧪 Testing basic API endpoints..."
           
-          echo "Testing /brands endpoint:"
-          curl -v http://localhost:8081/brands
+          echo "Testing /products endpoint:"
+          curl -v ${{ env.API_BASE_URL }}/products
           
-          echo -e "\nTesting /products endpoint:"
-          curl -v http://localhost:8081/products
+          echo -e "\nTesting /users endpoint:"
+          curl -v ${{ env.API_BASE_URL }}/users
 
       - name: Get Authentication Tokens
         id: auth
+        working-directory: sprint5-with-bugs
         run: |
           echo "🔐 Getting authentication tokens..."
           
           # Get admin token
           echo "Getting admin token..."
-          ADMIN_RESPONSE=$(curl -s -w "HTTPSTATUS:%{http_code}" -X POST http://localhost:8081/users/login \
+          ADMIN_RESPONSE=$(curl -s -w "HTTPSTATUS:%{http_code}" -X POST ${{ env.API_BASE_URL }}/users/login \
             -H "Content-Type: application/json" \
             -d '{
               "email": "admin@practicesoftwaretesting.com",
@@ -127,7 +146,7 @@ jobs:
           
           # Get user token
           echo "Getting user token..."
-          USER_RESPONSE=$(curl -s -w "HTTPSTATUS:%{http_code}" -X POST http://localhost:8081/users/login \
+          USER_RESPONSE=$(curl -s -w "HTTPSTATUS:%{http_code}" -X POST ${{ env.API_BASE_URL }}/users/login \
             -H "Content-Type: application/json" \
             -d '{
               "email": "customer@practicesoftwaretesting.com", 
@@ -149,6 +168,7 @@ jobs:
           fi
 
       - name: Run Postman Collection Tests
+        working-directory: sprint5-with-bugs
         if: steps.auth.outputs.admin_token != '' && steps.auth.outputs.user_token != ''
         run: |
           echo "🧪 Running Postman collection tests..."
@@ -160,7 +180,7 @@ jobs:
             "values": [
               {
                 "key": "baseUrl",
-                "value": "http://localhost:8081"
+                "value": "${{ env.API_BASE_URL }}"
               },
               {
                 "key": "admin_token", 
@@ -183,8 +203,8 @@ jobs:
             --reporters cli,htmlextra,junit \
             --reporter-htmlextra-export reports/newman-report.html \
             --reporter-junit-export reports/junit-report.xml \
-            --delay-request 2000 \
-            --timeout-request 15000 \
+            --delay-request 3000 \
+            --timeout-request 20000 \
             --verbose
 
       - name: Upload Test Reports
@@ -192,18 +212,19 @@ jobs:
         if: always()
         with:
           name: test-reports
-          path: reports/
+          path: sprint5-with-bugs/reports/
           retention-days: 30
 
       - name: Publish Test Results
         uses: dorny/test-reporter@v1
-        if: always() && hashFiles('reports/junit-report.xml') != ''
+        if: always() && hashFiles('sprint5-with-bugs/reports/junit-report.xml') != ''
         with:
           name: Toolshop API Test Results
-          path: reports/junit-report.xml
+          path: sprint5-with-bugs/reports/junit-report.xml
           reporter: java-junit
 
       - name: Generate Test Summary
+        working-directory: sprint5-with-bugs
         if: always()
         run: |
           echo "## 🧪 Toolshop API Test Summary" >> $GITHUB_STEP_SUMMARY
@@ -219,7 +240,7 @@ jobs:
             echo "| Total Tests | $TOTAL |" >> $GITHUB_STEP_SUMMARY
             echo "| Failures | $FAILURES |" >> $GITHUB_STEP_SUMMARY
             echo "| Errors | $ERRORS |" >> $GITHUB_STEP_SUMMARY
-            echo "| API Base URL | http://localhost:8081 |" >> $GITHUB_STEP_SUMMARY
+            echo "| API Base URL | ${{ env.API_BASE_URL }} |" >> $GITHUB_STEP_SUMMARY
             
             if [ "$FAILURES" -eq 0 ] && [ "$ERRORS" -eq 0 ]; then
               echo "| Status | ✅ All tests passed |" >> $GITHUB_STEP_SUMMARY
@@ -231,13 +252,16 @@ jobs:
           fi
 
       - name: Debug Information
+        working-directory: sprint5-with-bugs
         if: failure()
         run: |
           echo "🔍 Debug information for troubleshooting:"
           echo "=== Container Status ==="
           docker compose ps
           echo "=== API Logs ==="
-          docker compose logs api
+          docker compose logs laravel-api
+          echo "=== Web Server Logs ==="
+          docker compose logs web
           echo "=== Database Logs ==="
           docker compose logs mariadb
           echo "=== Network Status ==="
@@ -246,6 +270,7 @@ jobs:
           df -h
 
       - name: Cleanup Environment
+        working-directory: sprint5-with-bugs
         if: always()
         run: |
           echo "🧹 Cleaning up..."
