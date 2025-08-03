@@ -1,0 +1,253 @@
+name: Toolshop API Tests - WORKING VERSION
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  SPRINT_DIR: .
+  DOCKER_COMPOSE_FILE: docker-compose.yml
+  BASE_URL: http://localhost:8081
+
+jobs:
+  test-api:
+    name: Test Toolshop API
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Free Disk Space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf "/usr/local/share/boost"
+          df -h
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Verify Docker Installation
+        run: |
+          echo "🐳 Docker version information:"
+          docker --version
+          docker compose version
+          echo "✅ Docker Compose V2 is available"
+
+      - name: Start Application Stack
+        run: |
+          echo "🚀 Starting the application stack..."
+          
+          # Use docker compose (V2 syntax) instead of docker-compose
+          docker compose up -d --build
+          
+          echo "⏳ Waiting for services to start..."
+          sleep 60
+          
+          echo "📋 Container status:"
+          docker compose ps
+          
+          echo "🔍 Checking container logs:"
+          docker compose logs --tail=20
+
+      - name: Wait for API Ready
+        run: |
+          echo "⏳ Waiting for API to be ready..."
+          
+          for i in {1..30}; do
+            if curl -f -s http://localhost:8081/brands > /dev/null 2>&1; then
+              echo "✅ API is ready!"
+              break
+            elif [ $i -eq 30 ]; then
+              echo "❌ API failed to start after 30 attempts"
+              echo "🔍 Final container status:"
+              docker compose ps
+              echo "🔍 API logs:"
+              docker compose logs api
+              echo "🔍 Database logs:"  
+              docker compose logs mariadb
+              exit 1
+            else
+              echo "⏳ Attempt $i/30: API not ready yet..."
+              sleep 10
+            fi
+          done
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Newman
+        run: |
+          npm install -g newman newman-reporter-htmlextra
+          newman --version
+
+      - name: Test Basic API Endpoints
+        run: |
+          echo "🧪 Testing basic API endpoints..."
+          
+          echo "Testing /brands endpoint:"
+          curl -v http://localhost:8081/brands
+          
+          echo -e "\nTesting /products endpoint:"
+          curl -v http://localhost:8081/products
+
+      - name: Get Authentication Tokens
+        id: auth
+        run: |
+          echo "🔐 Getting authentication tokens..."
+          
+          # Get admin token
+          echo "Getting admin token..."
+          ADMIN_RESPONSE=$(curl -s -w "HTTPSTATUS:%{http_code}" -X POST http://localhost:8081/users/login \
+            -H "Content-Type: application/json" \
+            -d '{
+              "email": "admin@practicesoftwaretesting.com",
+              "password": "welcome01"
+            }')
+          
+          ADMIN_BODY=$(echo $ADMIN_RESPONSE | sed -E 's/HTTPSTATUS\:[0-9]{3}$//')
+          ADMIN_STATUS=$(echo $ADMIN_RESPONSE | tr -d '\n' | sed -E 's/.*HTTPSTATUS:([0-9]{3})$/\1/')
+          
+          echo "Admin login status: $ADMIN_STATUS"
+          
+          if [ "$ADMIN_STATUS" -eq 200 ]; then
+            ADMIN_TOKEN=$(echo $ADMIN_BODY | jq -r '.access_token // empty')
+            echo "admin_token=$ADMIN_TOKEN" >> $GITHUB_OUTPUT
+            echo "✅ Admin token obtained"
+          else
+            echo "❌ Admin login failed"
+            echo "Response: $ADMIN_BODY"
+          fi
+          
+          # Get user token
+          echo "Getting user token..."
+          USER_RESPONSE=$(curl -s -w "HTTPSTATUS:%{http_code}" -X POST http://localhost:8081/users/login \
+            -H "Content-Type: application/json" \
+            -d '{
+              "email": "customer@practicesoftwaretesting.com", 
+              "password": "welcome01"
+            }')
+          
+          USER_BODY=$(echo $USER_RESPONSE | sed -E 's/HTTPSTATUS\:[0-9]{3}$//')
+          USER_STATUS=$(echo $USER_RESPONSE | tr -d '\n' | sed -E 's/.*HTTPSTATUS:([0-9]{3})$/\1/')
+          
+          echo "User login status: $USER_STATUS"
+          
+          if [ "$USER_STATUS" -eq 200 ]; then
+            USER_TOKEN=$(echo $USER_BODY | jq -r '.access_token // empty')
+            echo "user_token=$USER_TOKEN" >> $GITHUB_OUTPUT
+            echo "✅ User token obtained"
+          else
+            echo "❌ User login failed"
+            echo "Response: $USER_BODY"
+          fi
+
+      - name: Run Postman Collection Tests
+        if: steps.auth.outputs.admin_token != '' && steps.auth.outputs.user_token != ''
+        run: |
+          echo "🧪 Running Postman collection tests..."
+          
+          # Create Newman environment
+          cat > newman-env.json << EOF
+          {
+            "name": "GitHub Actions Environment",
+            "values": [
+              {
+                "key": "baseUrl",
+                "value": "http://localhost:8081"
+              },
+              {
+                "key": "admin_token", 
+                "value": "${{ steps.auth.outputs.admin_token }}"
+              },
+              {
+                "key": "user_token",
+                "value": "${{ steps.auth.outputs.user_token }}"
+              }
+            ]
+          }
+          EOF
+          
+          # Create reports directory
+          mkdir -p reports
+          
+          # Run Newman tests
+          newman run Toolshop_APITesting.postman_collection.json \
+            --environment newman-env.json \
+            --reporters cli,htmlextra,junit \
+            --reporter-htmlextra-export reports/newman-report.html \
+            --reporter-junit-export reports/junit-report.xml \
+            --delay-request 2000 \
+            --timeout-request 15000 \
+            --verbose
+
+      - name: Upload Test Reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports
+          path: reports/
+          retention-days: 30
+
+      - name: Publish Test Results
+        uses: dorny/test-reporter@v1
+        if: always() && hashFiles('reports/junit-report.xml') != ''
+        with:
+          name: Toolshop API Test Results
+          path: reports/junit-report.xml
+          reporter: java-junit
+
+      - name: Generate Test Summary
+        if: always()
+        run: |
+          echo "## 🧪 Toolshop API Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "reports/junit-report.xml" ]; then
+            TOTAL=$(grep -o 'tests="[0-9]*"' reports/junit-report.xml | cut -d'"' -f2)
+            FAILURES=$(grep -o 'failures="[0-9]*"' reports/junit-report.xml | cut -d'"' -f2)
+            ERRORS=$(grep -o 'errors="[0-9]*"' reports/junit-report.xml | cut -d'"' -f2)
+            
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Total Tests | $TOTAL |" >> $GITHUB_STEP_SUMMARY
+            echo "| Failures | $FAILURES |" >> $GITHUB_STEP_SUMMARY
+            echo "| Errors | $ERRORS |" >> $GITHUB_STEP_SUMMARY
+            echo "| API Base URL | http://localhost:8081 |" >> $GITHUB_STEP_SUMMARY
+            
+            if [ "$FAILURES" -eq 0 ] && [ "$ERRORS" -eq 0 ]; then
+              echo "| Status | ✅ All tests passed |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| Status | ❌ Some tests failed |" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "❌ No test results found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Debug Information
+        if: failure()
+        run: |
+          echo "🔍 Debug information for troubleshooting:"
+          echo "=== Container Status ==="
+          docker compose ps
+          echo "=== API Logs ==="
+          docker compose logs api
+          echo "=== Database Logs ==="
+          docker compose logs mariadb
+          echo "=== Network Status ==="
+          netstat -tlnp | grep :808 || echo "No processes on port 808x"
+          echo "=== Disk Space ==="
+          df -h
+
+      - name: Cleanup Environment
+        if: always()
+        run: |
+          echo "🧹 Cleaning up..."
+          docker compose down -v --remove-orphans
+          docker system prune -f --volumes
