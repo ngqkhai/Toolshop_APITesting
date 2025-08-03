@@ -32,7 +32,7 @@ on:
           - favorites-management
 
 env:
-  SPRINT_DIR: sprint5-with-bugs
+  SPRINT_DIR: .
   DOCKER_COMPOSE_FILE: docker-compose.yml
   BASE_URL: http://localhost:8091
 

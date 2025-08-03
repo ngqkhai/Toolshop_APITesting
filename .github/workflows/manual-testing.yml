@@ -23,7 +23,7 @@ on:
         placeholder: 'e.g., BRAND-CREATE-TC001'
 
 env:
-  SPRINT_DIR: sprint5-with-bugs
+  SPRINT_DIR: .
   BASE_URL: http://localhost:8091
 
 jobs:
@@ -98,12 +98,9 @@ jobs:
         working-directory: ${{ env.SPRINT_DIR }}
         run: |
           echo "🚀 Starting environment for specific test..."
-          cd ..
           echo "SPRINT=sprint5-with-bugs" > .env
           docker compose up -d
           sleep 90
-          
-          cd ${{ env.SPRINT_DIR }}
           
           # Get authentication tokens
           ADMIN_RESPONSE=$(curl -s -X POST http://localhost:8091/users/login \

@@ -36,11 +36,8 @@ jobs:
           docker compose version
           echo "✅ Docker Compose V2 is available"
 
-      - name: Navigate to Sprint Directory
-        run: cd sprint5-with-bugs
-
       - name: Start Application Stack
-        working-directory: sprint5-with-bugs
+        working-directory: .
         run: |
           echo "🚀 Starting the application stack..."
           
@@ -60,7 +57,7 @@ jobs:
           docker compose logs --tail=30
 
       - name: Wait for API Ready
-        working-directory: sprint5-with-bugs
+        working-directory: .
         run: |
           echo "⏳ Waiting for API to be ready..."
           
@@ -105,7 +102,7 @@ jobs:
           newman --version
 
       - name: Test Basic API Endpoints
-        working-directory: sprint5-with-bugs
+        working-directory: .
         run: |
           echo "🧪 Testing basic API endpoints..."
           
@@ -117,7 +114,7 @@ jobs:
 
       - name: Get Authentication Tokens
         id: auth
-        working-directory: sprint5-with-bugs
+        working-directory: .
         run: |
           echo "🔐 Getting authentication tokens..."
           
@@ -168,7 +165,7 @@ jobs:
           fi
 
       - name: Run Postman Collection Tests
-        working-directory: sprint5-with-bugs
+        working-directory: .
         if: steps.auth.outputs.admin_token != '' && steps.auth.outputs.user_token != ''
         run: |
           echo "🧪 Running Postman collection tests..."
@@ -212,19 +209,19 @@ jobs:
         if: always()
         with:
           name: test-reports
-          path: sprint5-with-bugs/reports/
+          path: reports/
           retention-days: 30
 
       - name: Publish Test Results
         uses: dorny/test-reporter@v1
-        if: always() && hashFiles('sprint5-with-bugs/reports/junit-report.xml') != ''
+        if: always() && hashFiles('reports/junit-report.xml') != ''
         with:
           name: Toolshop API Test Results
-          path: sprint5-with-bugs/reports/junit-report.xml
+          path: reports/junit-report.xml
           reporter: java-junit
 
       - name: Generate Test Summary
-        working-directory: sprint5-with-bugs
+        working-directory: .
         if: always()
         run: |
           echo "## 🧪 Toolshop API Test Summary" >> $GITHUB_STEP_SUMMARY
@@ -252,7 +249,7 @@ jobs:
           fi
 
       - name: Debug Information
-        working-directory: sprint5-with-bugs
+        working-directory: .
         if: failure()
         run: |
           echo "🔍 Debug information for troubleshooting:"
@@ -270,7 +267,7 @@ jobs:
           df -h
 
       - name: Cleanup Environment
-        working-directory: sprint5-with-bugs
+        working-directory: .
         if: always()
         run: |
           echo "🧹 Cleaning up..."

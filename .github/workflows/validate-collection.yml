@@ -11,7 +11,7 @@ on:
       - 'sprint5-with-bugs/test.case.csv'
 
 env:
-  SPRINT_DIR: sprint5-with-bugs
+  SPRINT_DIR: .
 
 jobs:
   validate-collection:

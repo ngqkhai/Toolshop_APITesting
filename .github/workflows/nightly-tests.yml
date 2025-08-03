@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  SPRINT_DIR: sprint5-with-bugs
+  SPRINT_DIR: .
   BASE_URL: http://localhost:8091
 
 jobs:
