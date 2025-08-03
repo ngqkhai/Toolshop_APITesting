@@ -56,6 +56,28 @@ jobs:
           echo "⏳ Waiting for services to be ready..."
           sleep 90
           
+          echo "🗄️ Setting up database..."
+          
+          # Wait for database to be ready and run setup
+          for i in {1..30}; do
+            if docker compose exec -T laravel-api php artisan migrate:status &> /dev/null; then
+              echo "✅ Database connection established!"
+              break
+            elif [ $i -eq 30 ]; then
+              echo "❌ Database connection failed"
+              exit 1
+            else
+              echo "Database not ready, waiting 10 seconds..."
+              sleep 10
+            fi
+          done
+          
+          # Setup database
+          docker compose exec -T laravel-api php artisan migrate --force
+          docker compose exec -T laravel-api php artisan db:seed --force
+          docker compose exec -T laravel-api php artisan cache:clear
+          echo "✅ Database setup complete!"
+          
           # Health check
           max_attempts=20
           attempt=0
@@ -101,6 +123,28 @@ jobs:
           echo "SPRINT=sprint5-with-bugs" > .env
           docker compose up -d
           sleep 90
+          
+          echo "🗄️ Setting up database..."
+          
+          # Wait for database to be ready and run setup
+          for i in {1..30}; do
+            if docker compose exec -T laravel-api php artisan migrate:status &> /dev/null; then
+              echo "✅ Database connection established!"
+              break
+            elif [ $i -eq 30 ]; then
+              echo "❌ Database connection failed"
+              exit 1
+            else
+              echo "Database not ready, waiting 10 seconds..."
+              sleep 10
+            fi
+          done
+          
+          # Setup database
+          docker compose exec -T laravel-api php artisan migrate --force
+          docker compose exec -T laravel-api php artisan db:seed --force
+          docker compose exec -T laravel-api php artisan cache:clear
+          echo "✅ Database setup complete!"
           
           # Get authentication tokens
           ADMIN_RESPONSE=$(curl -s -X POST http://localhost:8091/users/login \

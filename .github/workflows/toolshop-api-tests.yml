@@ -56,6 +56,42 @@ jobs:
           echo "🔍 Checking container logs:"
           docker compose logs --tail=30
 
+      - name: Setup Database
+        working-directory: .
+        run: |
+          echo "🗄️ Setting up database..."
+          
+          # Wait for database to be ready
+          echo "⏳ Waiting for database connection..."
+          for i in {1..30}; do
+            if docker compose exec -T laravel-api php artisan migrate:status &> /dev/null; then
+              echo "✅ Database connection established!"
+              break
+            elif [ $i -eq 30 ]; then
+              echo "❌ Database connection failed after 30 attempts"
+              docker compose logs mariadb
+              exit 1
+            else
+              echo "Database not ready, waiting 10 seconds... (attempt $i/30)"
+              sleep 10
+            fi
+          done
+          
+          # Run migrations
+          echo "🔄 Running database migrations..."
+          docker compose exec -T laravel-api php artisan migrate --force
+          
+          # Run seeders
+          echo "🌱 Seeding database..."
+          docker compose exec -T laravel-api php artisan db:seed --force
+          
+          # Clear caches
+          echo "🧹 Clearing caches..."
+          docker compose exec -T laravel-api php artisan cache:clear
+          docker compose exec -T laravel-api php artisan config:clear
+          
+          echo "✅ Database setup complete!"
+
       - name: Wait for API Ready
         working-directory: .
         run: |
