@@ -1,9 +1,8 @@
-version: '3.8'
 services:
   # The Application
   laravel-api:
     build:
-      context: ../_docker
+      context: ./_docker
       dockerfile: api.docker
       target: development
     working_dir: /var/www
@@ -20,7 +19,7 @@ services:
 
   angular-ui:
     build:
-      context: ../_docker
+      context: ./_docker
       dockerfile: ui.docker
       target: development
     working_dir: /app
@@ -34,7 +33,7 @@ services:
   # The Web Server
   web:
     build:
-      context: ../_docker
+      context: ./_docker
       dockerfile: web.docker
     working_dir: /var/www
     volumes:
