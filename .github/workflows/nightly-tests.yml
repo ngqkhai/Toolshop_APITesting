@@ -33,7 +33,7 @@ jobs:
         working-directory: .
         run: |
           echo "SPRINT=sprint5-with-bugs" > .env
-          docker-compose up -d --build
+          docker compose up -d --build
           sleep 90
 
       - name: Wait for Application Ready
@@ -143,5 +143,5 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker-compose down -v
+          docker compose down -v
           docker system prune -f

@@ -54,7 +54,7 @@ jobs:
           echo "SPRINT=sprint5-with-bugs" > .env
           
           # Start the application stack
-          docker-compose up -d --build
+          docker compose up -d --build
           
           # Wait for services to be ready
           echo "Waiting for services to start..."
@@ -82,7 +82,7 @@ jobs:
           if [ $attempt -eq $max_attempts ]; then
             echo "❌ Application failed to start"
             echo "ready=false" >> $GITHUB_OUTPUT
-            docker-compose logs
+            docker compose logs
             exit 1
           fi
 
@@ -126,7 +126,7 @@ jobs:
         working-directory: .
         run: |
           echo "SPRINT=sprint5-with-bugs" > .env
-          docker-compose up -d
+          docker compose up -d
           sleep 60
 
       - name: Get Authentication Tokens
@@ -212,7 +212,7 @@ jobs:
         working-directory: .
         run: |
           echo "SPRINT=sprint5-with-bugs" > .env
-          docker-compose up -d
+          docker compose up -d
           sleep 60
 
       - name: Get Authentication Tokens
@@ -266,5 +266,5 @@ jobs:
 
       - name: Stop Docker Services
         run: |
-          docker-compose down -v
+          docker compose down -v
           docker system prune -f

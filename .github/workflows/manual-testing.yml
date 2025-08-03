@@ -51,7 +51,7 @@ jobs:
         run: |
           echo "🚀 Starting test environment..."
           echo "SPRINT=sprint5-with-bugs" > .env
-          docker-compose up -d --build
+          docker compose up -d --build
           
           echo "⏳ Waiting for services to be ready..."
           sleep 90
@@ -100,7 +100,7 @@ jobs:
           echo "🚀 Starting environment for specific test..."
           cd ..
           echo "SPRINT=sprint5-with-bugs" > .env
-          docker-compose up -d
+          docker compose up -d
           sleep 90
           
           cd ${{ env.SPRINT_DIR }}
@@ -172,7 +172,7 @@ jobs:
         if: github.event.inputs.action == 'stop' || (github.event.inputs.action == 'start' && github.event.inputs.duration != '')
         run: |
           echo "🛑 Stopping test environment..."
-          docker-compose down -v
+          docker compose down -v
           docker system prune -f
           echo "✅ Environment stopped"
 
