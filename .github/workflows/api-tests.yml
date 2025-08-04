@@ -47,6 +47,17 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Verify Project Structure
+        working-directory: ${{ env.SPRINT_DIR }}
+        run: |
+          echo "📁 Current directory contents:"
+          ls -la
+          echo ""
+          echo "🔍 Checking for required files:"
+          test -f docker-compose.yml && echo "✅ docker-compose.yml exists" || echo "❌ docker-compose.yml missing"
+          test -f API/.env.example && echo "✅ API/.env.example exists" || echo "❌ API/.env.example missing"
+          test -f Toolshop_APITesting.postman_collection.json && echo "✅ Postman collection exists" || echo "❌ Postman collection missing"
+
       - name: Set up Docker Environment
         working-directory: ${{ env.SPRINT_DIR }}
         run: |
@@ -65,30 +76,70 @@ jobs:
           echo "JWT_SECRET=XVVuj9s7byIX8XPNWt0aYOsFjmc4JZQmE2wR7h9IJXoEOWXwk6o6wM8AKUL7jUTy" >> API/.env
           
           # Start the application stack
+          echo "🚀 Starting Docker services..."
           docker compose up -d --build
           
+          # Show running containers
+          echo "📋 Running containers:"
+          docker compose ps
+          
           # Wait for services to be ready
-          echo "Waiting for services to start..."
-          sleep 60
+          echo "⏳ Waiting for services to start..."
+          sleep 90
 
       - name: Setup Database
         working-directory: ${{ env.SPRINT_DIR }}
         run: |
           echo "🗄️ Setting up database..."
           
-          # Wait for database to be ready
-          echo "⏳ Waiting for database connection..."
+          # Wait for MariaDB service to be ready first
+          echo "⏳ Waiting for MariaDB service..."
           for i in {1..30}; do
-            if docker compose exec -T laravel-api php artisan migrate:status &> /dev/null; then
-              echo "✅ Database connection established!"
+            if docker compose exec -T mariadb mysqladmin ping -h localhost -u root -proot --silent; then
+              echo "✅ MariaDB service is ready!"
               break
             elif [ $i -eq 30 ]; then
-              echo "❌ Database connection failed after 30 attempts"
+              echo "❌ MariaDB service failed to start after 30 attempts"
               docker compose logs mariadb
               exit 1
             else
-              echo "Database not ready, waiting 10 seconds... (attempt $i/30)"
+              echo "MariaDB not ready, waiting 10 seconds... (attempt $i/30)"
               sleep 10
+            fi
+          done
+          
+          # Wait for Laravel application to be ready
+          echo "⏳ Waiting for Laravel application..."
+          for i in {1..30}; do
+            if docker compose exec -T laravel-api php -v > /dev/null 2>&1; then
+              echo "✅ Laravel application is ready!"
+              break
+            elif [ $i -eq 30 ]; then
+              echo "❌ Laravel application failed to start after 30 attempts"
+              docker compose logs laravel-api
+              exit 1
+            else
+              echo "Laravel application not ready, waiting 10 seconds... (attempt $i/30)"
+              sleep 10
+            fi
+          done
+          
+          # Test database connection through Laravel
+          echo "⏳ Testing database connection through Laravel..."
+          for i in {1..20}; do
+            if docker compose exec -T laravel-api php artisan migrate:status > /dev/null 2>&1; then
+              echo "✅ Database connection established!"
+              break
+            elif [ $i -eq 20 ]; then
+              echo "❌ Database connection failed after 20 attempts"
+              echo "Checking Laravel logs..."
+              docker compose logs laravel-api
+              echo "Checking MariaDB logs..."
+              docker compose logs mariadb
+              exit 1
+            else
+              echo "Database connection not ready, waiting 5 seconds... (attempt $i/20)"
+              sleep 5
             fi
           done
           
